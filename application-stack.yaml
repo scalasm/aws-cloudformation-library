@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  Defines a application stack for a static WWW server deployment.
+
+Parameters:
+  NetworkStackName:
+    Description: "Name of an active CloudFormation stack that contains the networking resources, such as the subnet and security group, that will be used in this stack."
+    Type: "String"
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: "^[a-zA-Z][-a-zA-Z0-9]*$"
+    Default: "my-network-stack"
+
+Mappings:
+  AWSRegionArch2AMI:
+    eu-west-1:
+      "PV64"  : "ami-23ab2250"
+      "HVM64" : "ami-b0ac25c3"
+      "HVMG2" : "ami-936de5e0"  
+
+Resources:
+  WebServerInstance:
+    Type: "AWS::EC2::Instance"
+    Metadata:
+      "AWS::CloudFormation::Init":
+        configSets:
+          All: [ "ConfigureSampleApp" ] 
+        ConfigureSampleApp:
+          packages:
+            yum:
+              httpd: []
+          files:
+            "/var/www/html/index.html":
+              content: !Join
+                - "\n"
+                -
+                  - "<img src=\"https://s3.amazonaws.com/cloudformation-examples/cloudformation_graphic.png\" alt=\"AWS CloudFormation Logo\"/>"
+                  - "<h1>Congratulations, you have successfully launched the AWS CloudFormation sample.</h1>"
+              mode: "000644"
+              owner: "root"
+              group: "root"
+          services:
+            sysvinit:
+              httpd:
+                enabled: true
+                ensureRunning: true
+    Properties:
+      InstanceType: "t2.micro"
+      ImageId: !FindInMap [ "AWSRegionArch2AMI", !Ref AWS::Region, "HVM64" ]
+      NetworkInterfaces:
+        - 
+          GroupSet:
+            - Fn::ImportValue: 
+                !Sub '${NetworkStackName}-WebServerSecurityGroupID'
+          AssociatePublicIpAddress: 'true'
+          DeviceIndex: '0'
+          DeleteOnTermination: 'true'
+          SubnetId: !ImportValue 
+            'Fn::Sub': '${NetworkStackName}-SubnetID'
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum update -y aws-cfn-bootstrap
+          # Install the files and packages from the metadata
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource WebServerInstance --configsets All --region ${AWS::Region}
+          # Signal the status from cfn-init
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource WebServerInstance --region ${AWS::Region} 
+Outputs:
+  URL:
+    Description: "URL of the sample website"
+    Value: !Join 
+        - ''
+        -
+          - "http://"
+          - !GetAtt WebServerInstance.PublicDnsName
