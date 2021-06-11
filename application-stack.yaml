@@ -11,6 +11,9 @@ Parameters:
     MaxLength: 255
     AllowedPattern: "^[a-zA-Z][-a-zA-Z0-9]*$"
     Default: "my-network-stack"
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Default: "aws_development_keypair_eu-west-1"
 
 Mappings:
   AWSRegionArch2AMI:
@@ -48,16 +51,17 @@ Resources:
     Properties:
       InstanceType: "t2.micro"
       ImageId: !FindInMap [ "AWSRegionArch2AMI", !Ref AWS::Region, "HVM64" ]
+      KeyName: !Ref KeyName
       NetworkInterfaces:
         - 
           GroupSet:
             - Fn::ImportValue: 
                 !Sub '${NetworkStackName}-WebServerSecurityGroupID'
-          AssociatePublicIpAddress: 'true'
-          DeviceIndex: '0'
-          DeleteOnTermination: 'true'
+          AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          DeleteOnTermination: true
           SubnetId: !ImportValue 
-            'Fn::Sub': '${NetworkStackName}-SubnetID'
+            'Fn::Sub': '${NetworkStackName}-PublicSubnetID'
       UserData: 
         Fn::Base64: !Sub |
           #!/bin/bash -xe
@@ -66,8 +70,40 @@ Resources:
           /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource WebServerInstance --configsets All --region ${AWS::Region}
           # Signal the status from cfn-init
           /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource WebServerInstance --region ${AWS::Region} 
+
+  # Allow bastion host to connect to web servers with SSH
+  BastionAllowOutboundSSHToWebServers:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId:
+        Fn::ImportValue: 
+          !Sub 'BastionSecurityGroup'
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      DestinationSecurityGroupId:
+        Fn::ImportValue: 
+          !Sub '${NetworkStackName}-WebServerSecurityGroupID'
+
+  # Allow Web servers to accept SSH connections from bastion host
+  WebServersAllowInboundSSHFromBastion:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: 
+        Fn::ImportValue: 
+          !Sub '${NetworkStackName}-WebServerSecurityGroupID'
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId:
+        Fn::ImportValue: 
+          !Sub 'BastionSecurityGroup'      
+
 Outputs:
-  URL:
+  WebServerPrivateIp:
+    Description: "Private IP address of the web server EC2 instance"
+    Value: !GetAtt  WebServerInstance.PrivateIp
+  WebServerPublicURL:
     Description: "URL of the sample website"
     Value: !Join 
         - ''
