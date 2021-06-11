@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  Defines the support stack with all the resources required for our IaC (e.g., the S3 bucket containing nested stack resources).
+
+Parameters:
+  SupportStackName:
+    Description: "Name of an active CloudFormation stack that contains the support resources, such as the subnet and security group, that will be used in this stack."
+    Type: "String"
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: "^[a-zA-Z][-a-zA-Z0-9]*$"
+    Default: "my-support-stack"
+  OnwerAccountNumber:
+    Description: "Account number (e.g., 1234567890)"
+    Type: "String"
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: "^[0-9]+$"
+
+Resources:
+  # An S3 Bucket where we are going to store all CFN templates that will be referred as nested stacks
+  CfnTemplatesBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        AccessControl: "PublicRead"
+        WebsiteConfiguration:
+          IndexDocument: "index.html"
+          ErrorDocument: "error.html"
+      DeletionPolicy: "Retain"
+
+  BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      PolicyDocument:
+        Id: "CfnTemplatesBucketPolicy"
+        Version: "2012-10-17"
+        Statement:
+          - 
+            Sid: "PublicReadForGetBucketObjects"
+            Effect: "Allow"
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Join 
+              - ''
+              - 
+                - !GetAtt CfnTemplatesBucket.Arn
+                - "/*"
+          - 
+            Sid: "FullControlBucketObjects"
+            Effect: "Allow"
+            Principal:
+              AWS: !Ref OnwerAccountNumber
+            Action: "s3:*"
+            Resource: !Join 
+              - ''
+              - 
+                - !GetAtt CfnTemplatesBucket.Arn
+                - "/*"                
+      Bucket: !Ref CfnTemplatesBucket
+
+Outputs:
+  CfnTemplatesBucketArn:
+    Description: "S3 Bucket ARN"
+    Value: !GetAtt CfnTemplatesBucket.Arn
+#  CfnTemplatesBucketName:
+#    Description: "S3 Bucket Name (useful for runnig 'aws s3 cp s3://<bucket-name>/..."
+#    Value: !GetAtt CfnTemplatesBucket.S3Bucket.BucketName
+  CfnTemplatesBucketUrl:
+    Description: "S3 Bucket URL"
+    Value: !Join 
+        - ''
+        -
+          - "https://"
+          - !GetAtt CfnTemplatesBucket.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-CfnTemplatesBucketUrl"
