@@ -11,7 +11,9 @@ Resources:
       EnableDnsSupport: true
       EnableDnsHostnames: true
       CidrBlock: "10.0.0.0/16"
-
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-vpc'
   InternetGateway:
     Type: "AWS::EC2::InternetGateway"
 
@@ -35,13 +37,16 @@ Resources:
       GatewayId: !Ref InternetGateway
 
   #
-  # Public subnet for application load balancers
+  # Public subnet for application load balancers and bastion hosts
   #
   PublicSubnet:
     Type: "AWS::EC2::Subnet"
     Properties:
       VpcId: !Ref VPC
       CidrBlock: "10.0.1.0/24"
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public'
 
   PublicSubnetRouteTableAssociation:
     Type: "AWS::EC2::SubnetRouteTableAssociation"
@@ -83,8 +88,8 @@ Outputs:
     Description: "The subnet ID to use for public web servers"
     Value: !Ref PublicSubnet
     Export:
-      Name: !Sub "${AWS::StackName}-SubnetID"
-  WebServerSecurityGroup:
+      Name: !Sub "${AWS::StackName}-PublicSubnetID"
+  WebServerSecurityGroupId:
     Description: "The security group ID to use for public web servers"
     Value: !GetAtt WebServerSecurityGroup.GroupId
     Export:

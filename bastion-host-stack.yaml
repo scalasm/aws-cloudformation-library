@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  This template will setup a bastion host (EC2 instance) in the specified VPC-Subnet. 
+  It is responsibility of other stacks to allow the connection between the bastion and other hosts (e.g., creating security group ingress rules) 
+
+Parameters:
+  EC2InstanceType:
+    Type: String
+    Description: "Instance type"
+    AllowedValues: [ "t1.micro", "t2.micro", "t2.small", "t2.medium", "m1.small", "m1.medium"]
+    Default: "t2.micro"
+    ConstraintDescription: "Must be a valid EC2 instance type."
+  EC2AMI:
+    Description: "Name of an active CloudFormation stack that contains the networking resources, such as the subnet and security group, that will be used in this stack."
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  KeyName:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Default: "aws_development_keypair_eu-west-1"
+  TargetVpcId:
+    Type: "AWS::EC2::VPC::Id"
+    Description: "The target VPC where this bastion will be created."
+  TargetSubnetId:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: "The target Subnet in which the bastion host will be created."
+
+Resources:
+  BastionInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref EC2AMI
+      InstanceType: !Ref EC2InstanceType
+      KeyName: !Ref KeyName
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet: 
+            - !Ref BastionSecurityGroup
+          SubnetId: !Ref TargetSubnetId
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-BastionInstance'
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for ${AWS::StackName} bastion host"
+      VpcId: !Ref TargetVpcId
+
+  BastionAllowInboundSSHFromInternet:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref BastionSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: 0.0.0.0/0
+
+Outputs:
+  BastionSecurityGroupId:
+    Description: "The security group ID used by bastion hosts"
+    Value: !GetAtt BastionSecurityGroup.GroupId
+    Export:
+      Name: "BastionSecurityGroup"
+  BastionPublicIp:
+    Description: 'Bastion Public IP'
+    Value: !Sub '${BastionInstance.PublicIp}'
+    Export:
+      Name: "BastionPublicIp"
+  BastionSshCommand:
+    Description: 'Bastion SSH CLI command snippet'
+    Value: !Sub 'ssh ec2-user@${BastionInstance.PublicIp} -i ${KeyName}.pem'
